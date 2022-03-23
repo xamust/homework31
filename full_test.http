@@ -1,0 +1,60 @@
+POST http://localhost:9090/create
+Content-Type: application/json
+
+{"name" : "Vasya", "age" : 12}
+
+###
+POST http://localhost:9090/create
+Content-Type: application/json
+
+{"name" : "Steven", "age" : 31}
+
+###
+POST http://localhost:9090/create
+Content-Type: application/json
+
+{"name" : "John", "age" : 43}
+
+###
+POST http://localhost:9090/make_friends
+Content-Type: application/json
+
+{"source_id" : 1, "target_id" : 2}
+
+###
+POST http://localhost:9090/make_friends
+Content-Type: application/json
+
+{"source_id" : 2, "target_id" : 3}
+
+###
+
+DELETE http://localhost:9090/user
+Content-Type: application/json
+
+{"target_id" : 2}
+
+###
+
+GET http://localhost:9090/friends/6
+Content-Type: application/json
+
+###
+
+GET http://localhost:9090/friends/3
+Content-Type: application/json
+
+###
+
+PUT http://localhost:9090/1
+Content-Type: application/json
+
+{"new_age" : 28}
+
+###
+
+GET http://localhost:9090/get_all
+Content-Type: application/json
+
+###
+

@@ -1,0 +1,4 @@
+bind_addr = ":9090"
+first_inst = "http://localhost:8081"
+second_inst = "http://localhost:8082"
+log_level = "debug"

@@ -1,0 +1,6 @@
+bind_addr = ":8080"
+log_level = "debug"
+
+[store]
+#В имени хоста указывать имя сервиса (db), а не localhost или 0.0.0.0
+database_url = "dbname=postgres user=postgres password=example host=db port=5432 sslmode=disable"

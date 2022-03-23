@@ -1,0 +1,68 @@
+version: "3.5"
+services:
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: example
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - '127.0.0.1:5432:5432'
+    networks:
+      - postgres
+
+  db_test:
+    image: postgres
+    depends_on:
+      - db
+    restart: always
+    environment:
+      POSTGRES_DB: testDB
+      POSTGRES_PASSWORD: example
+    volumes:
+      - ./init_test.sql:/docker-entrypoint-initdb.d/init_test.sql
+    ports:
+      - '127.0.0.1:5433:5432'
+    networks:
+      - postgres
+
+  server1:
+    restart: always
+    environment:
+      DATABASE_URL: dbname=testDB user=postgres password=example host=db_test port=5433 sslmode=disable
+    depends_on:
+      - db
+      - db_test
+    build: './server/'
+    ports:
+      - '127.0.0.1:8081:8080'
+    networks:
+      - postgres
+
+  server2:
+    restart: always
+    environment:
+      DATABASE_URL: dbname=testDB user=postgres password=example host=db_test port=5433 sslmode=disable
+    depends_on:
+      - db
+      - db_test
+    build: './server/'
+    ports:
+      - '127.0.0.1:8082:8080'
+    networks:
+      - postgres
+
+  proxy:
+    restart: always
+    depends_on:
+      - server1
+      - server2
+    network_mode: host
+    build: './proxy/'
+    ports:
+      - '127.0.0.1:9090:9090'
+
+networks:
+  postgres:
+    driver: bridge
