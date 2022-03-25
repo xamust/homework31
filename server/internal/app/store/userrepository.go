@@ -6,6 +6,17 @@ import (
 	"server/internal/app/model"
 )
 
+type UserRepositoryInterface interface {
+	Create(m *model.User) (*model.User, error)
+	UpdateUser(m *model.User) (*model.User, error)
+	SetFriends(m *model.User) (*model.User, error)
+	FindById(id int64) (*model.User, error)
+	FindByName(name string) (*model.User, error)
+	GetAll() (*[]model.User, error)
+	DeleteByID(id int64) error
+	ClearDeleteUserFromFriends(userID int64, id []int64) error
+}
+
 type UserRepository struct {
 	store *AppStore
 }
