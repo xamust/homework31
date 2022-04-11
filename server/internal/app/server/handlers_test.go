@@ -8,18 +8,112 @@ import (
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"server/internal/app/model"
-	"server/internal/app/store"
 	"testing"
 )
 
+var (
+	//for correct create user ID
+	countID int64
+	//test DB storage...
+	testDBUsers = make(map[int64]*model.User)
+)
+
+//for correct create user ID
+func countGet() int64 {
+	countID += 1
+	return countID
+}
+
+//реализация интерефейса store.UserRepo from userrepository.go
+type MockTestDB struct{}
+
+func (mDB *MockTestDB) Create(m *model.User) (*model.User, error) {
+	m.ID = countGet()
+	testDBUsers[m.ID] = m
+	return m, nil
+}
+
+func (mDB *MockTestDB) UpdateUser(m *model.User) (*model.User, error) {
+	if _, ok := testDBUsers[m.ID]; !ok {
+		return nil, fmt.Errorf("Пользователя с id: %d, нет в базе данных.", m.ID)
+	}
+	return m, nil
+}
+
+func (mDB *MockTestDB) SetFriends(m *model.User) (*model.User, error) {
+	return m, nil
+}
+
+func (mDB *MockTestDB) FindById(id int64) (*model.User, error) {
+	if _, ok := testDBUsers[id]; !ok {
+		return nil, fmt.Errorf("Пользователя с id: %d, нет в базе данных.", id)
+	}
+	return testDBUsers[id], nil
+}
+
+func (mDB *MockTestDB) FindByName(name string) (*model.User, error) {
+	for _, v := range testDBUsers {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("Пользователя с name: %s, нет в базе данных.", name)
+}
+
+func (mDB *MockTestDB) GetAll() (*[]model.User, error) {
+	//convert map[int64]*model.User to *[]model.User....
+	res := []model.User{}
+	for _, v := range testDBUsers {
+		res = append(res, *v)
+	}
+	return &res, nil
+}
+
+func (mDB *MockTestDB) DeleteByID(id int64) error {
+	if _, ok := testDBUsers[id]; !ok {
+		return fmt.Errorf("Пользователя с id: %d, нет в базе данных.", id)
+	}
+	//clean Friends from another users...
+	mDB.ClearDeleteUserFromFriends(id, testDBUsers[id].Friends)
+	//delete from test DB (map)...
+	delete(testDBUsers, id)
+	return nil
+}
+
+func (mDB *MockTestDB) ClearDeleteUserFromFriends(userID int64, id []int64) error {
+
+	for _, v := range id {
+		us, err := mDB.FindById(v)
+		if err != nil {
+			return err
+		}
+		for i, k := range us.Friends {
+			if k == userID {
+				us.Friends = append(us.Friends[:i], us.Friends[i+1:]...)
+			}
+		}
+		if _, err = mDB.SetFriends(us); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func TestAppServer_Create(t *testing.T) {
 
-	s, serverTest, teardown := initTestDB(t)
-	defer teardown("users")
+	//init test struct for mock...
+	rep := &MockTestDB{}
 
-	_, _, usTest3 := initData(t, s)
+	//init new logrus with panic level, for ignore logger...
+	lg := logrus.New()
+	lg.SetLevel(logrus.PanicLevel)
+
+	//init new gorilla/mux
+	muxTest := mux.NewRouter()
+
+	//init Handlers with test mock...
+	serverTest := Handlers{lg, muxTest, rep}
 
 	//можно без массива структур, для примера
 	testCases := []struct {
@@ -31,9 +125,14 @@ func TestAppServer_Create(t *testing.T) {
 		{
 			name:   "Testing create user handler...",
 			method: http.MethodPost,
-			//
-			body: fmt.Sprintf(`{"name" : "%s", "age" : %d}`, "testName4", 333),
-			want: []byte(fmt.Sprintf("id:%d", usTest3.ID+1)),
+			body:   fmt.Sprintf(`{"name" : "%s", "age" : %d}`, "testName4", 333),
+			want:   []byte(fmt.Sprintf("id:%d", 1)),
+		},
+		{
+			name:   "Testing create user handler...",
+			method: http.MethodPost,
+			body:   fmt.Sprintf(`{"name" : "%s", "age" : %d}`, "testName1", 111),
+			want:   []byte(fmt.Sprintf("id:%d", 2)),
 		},
 	}
 
@@ -53,9 +152,21 @@ func TestAppServer_Create(t *testing.T) {
 
 func TestAppServer_MakeFriends(t *testing.T) {
 
-	s, serverTest, teardown := initTestDB(t)
-	defer teardown("users")
-	usTest1, usTest2, usTest3 := initData(t, s)
+	//init test struct for mock...
+	rep := &MockTestDB{}
+
+	//init new logrus with panic level, for ignore logger...
+	lg := logrus.New()
+	lg.SetLevel(logrus.PanicLevel)
+
+	//init new gorilla/mux
+	muxTest := mux.NewRouter()
+
+	//init Handlers with test mock...
+	serverTest := Handlers{lg, muxTest, rep}
+
+	//init testUsers...
+	usTest1, usTest2, usTest3 := initData(*rep)
 
 	testCases := []struct {
 		name   string
@@ -113,9 +224,22 @@ func TestAppServer_MakeFriends(t *testing.T) {
 }
 
 func TestAppServer_Delete(t *testing.T) {
-	s, serverTest, teardown := initTestDB(t)
-	defer teardown("users")
-	usTest1, _, _ := initData(t, s)
+
+	//init test struct for mock...
+	rep := &MockTestDB{}
+
+	//init new logrus with panic level, for ignore logger...
+	lg := logrus.New()
+	lg.SetLevel(logrus.PanicLevel)
+
+	//init new gorilla/mux
+	muxTest := mux.NewRouter()
+
+	//init Handlers with test mock...
+	serverTest := Handlers{lg, muxTest, rep}
+
+	//init testUsers...
+	usTest1, _, _ := initData(*rep)
 
 	handlerTest := http.HandlerFunc(serverTest.Delete)
 
@@ -170,16 +294,29 @@ func TestAppServer_Delete(t *testing.T) {
 }
 
 func TestAppServer_GetFriends(t *testing.T) {
-	s, serverTest, teardown := initTestDB(t)
-	defer teardown("users")
-	usTest1, usTest2, usTest3 := initData(t, s)
+
+	//init test struct for mock...
+	rep := &MockTestDB{}
+
+	//init new logrus with panic level, for ignore logger...
+	lg := logrus.New()
+	lg.SetLevel(logrus.PanicLevel)
+
+	//init new gorilla/mux
+	muxTest := mux.NewRouter()
+
+	//init Handlers with test mock...
+	serverTest := Handlers{lg, muxTest, rep}
+
+	//init testUsers...
+	usTest1, usTest2, usTest3 := initData(*rep)
 
 	//make usTest1 and usTest2 friends, usTest3 no friends
 	usTest1.Friends = append(usTest1.Friends, usTest2.ID)
-	_, err := s.User().UpdateUser(usTest1)
+	_, err := rep.UpdateUser(usTest1)
 	assert.NoError(t, err)
 	usTest2.Friends = append(usTest2.Friends, usTest1.ID)
-	_, err = s.User().UpdateUser(usTest2)
+	_, err = rep.UpdateUser(usTest2)
 	assert.NoError(t, err)
 
 	testCases := []struct {
@@ -223,9 +360,22 @@ func TestAppServer_GetFriends(t *testing.T) {
 }
 
 func TestAppServer_Put(t *testing.T) {
-	s, serverTest, teardown := initTestDB(t)
-	defer teardown("users")
-	usTest1, usTest2, usTest3 := initData(t, s)
+
+	//init test struct for mock...
+	rep := &MockTestDB{}
+
+	//init new logrus with panic level, for ignore logger...
+	lg := logrus.New()
+	lg.SetLevel(logrus.PanicLevel)
+
+	//init new gorilla/mux
+	muxTest := mux.NewRouter()
+
+	//init Handlers with test mock...
+	serverTest := Handlers{lg, muxTest, rep}
+
+	//init testUsers...
+	usTest1, usTest2, usTest3 := initData(*rep)
 
 	testCases := []struct {
 		name   string
@@ -273,59 +423,24 @@ func TestAppServer_Put(t *testing.T) {
 
 }
 
-func initTestDB(t *testing.T) (*store.AppStore, *AppServer, func(...string)) {
+//create users data...
+func initData(rep MockTestDB) (*model.User, *model.User, *model.User) {
+	//init testUsers...
+	usTest1, _ := rep.Create(&model.User{
+		Name:    "testName1",
+		Age:     777,
+		Friends: []int64{}})
 
-	dataBaseURL := os.Getenv("DATABASE_URL")
-	if dataBaseURL == "" {
-		dataBaseURL = "dbname=testDB user=postgres password=example host=localhost port=5433 sslmode=disable"
-	}
-	//инициализируем тестовую базу...
-	s, teardown := store.TestStore(t, dataBaseURL)
+	usTest2, _ := rep.Create(&model.User{
+		Name:    "testName2",
+		Age:     888,
+		Friends: []int64{},
+	})
 
-	//инициализируем экземпляры user...
-	testUsers := []model.User{
-		{
-			Name:    "testName1",
-			Age:     777,
-			Friends: []int64{},
-		},
-		{
-			Name:    "testName2",
-			Age:     888,
-			Friends: []int64{},
-		},
-		{
-			Name:    "testName3",
-			Age:     999,
-			Friends: []int64{},
-		},
-	}
-	for _, us := range testUsers {
-		_, err := s.User().Create(&us)
-		//не ожидаем ошибки
-		assert.NoError(t, err)
-	}
-
-	//инициализируем экзепляр server, с требуемыми параметрами
-	serverTest := &AppServer{
-		logger:  logrus.New(),
-		mux:     mux.NewRouter(),
-		storeBD: s,
-	}
-	//level panic for hide log output
-	serverTest.logger.SetLevel(logrus.PanicLevel)
-	return s, serverTest, teardown
-}
-
-func initData(t *testing.T, s *store.AppStore) (*model.User, *model.User, *model.User) {
-	//get ID user testName1
-	usTest1, err := s.User().FindByName("testName1")
-	assert.NoError(t, err)
-	//get ID user testName2
-	usTest2, err := s.User().FindByName("testName2")
-	assert.NoError(t, err)
-	//get ID user testName3
-	usTest3, err := s.User().FindByName("testName3")
-	assert.NoError(t, err)
+	usTest3, _ := rep.Create(&model.User{
+		Name:    "testName3",
+		Age:     999,
+		Friends: []int64{},
+	})
 	return usTest1, usTest2, usTest3
 }

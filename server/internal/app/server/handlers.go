@@ -4,15 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"reflect"
 	"server/internal/app/model"
+	"server/internal/app/store"
 	"strconv"
 )
 
+type Handlers struct {
+	logger *logrus.Logger
+	mux    *mux.Router
+	userZ  store.UserRepo
+}
+
 // Create CreateUser
-func (s *AppServer) Create(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) Create(w http.ResponseWriter, r *http.Request) {
+
+	var u *model.User
 
 	if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
 		content, err := ioutil.ReadAll(r.Body)
@@ -22,8 +32,6 @@ func (s *AppServer) Create(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(err.Error()))
 		}
 		defer r.Body.Close()
-
-		var u *User
 
 		if err := json.Unmarshal(content, &u); err != nil {
 			s.logger.Error(err)
@@ -37,12 +45,16 @@ func (s *AppServer) Create(w http.ResponseWriter, r *http.Request) {
 			u.Friends = make([]int64, 0)
 		}
 
-		if _, err = s.storeBD.User().Create((*model.User)(u)); err != nil {
+		if _, err = s.userZ.Create(u); err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
 			return
 		}
+
+		//s.store[u.Name] = u //for map[] store
+		//GlobalId += 1 //for map[] store
+		//u.ID = GlobalId //костылёк с ID, for map[] store
 
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -56,7 +68,7 @@ func (s *AppServer) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // MakeFriends MakeFriends
-func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) MakeFriends(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
 		content, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -66,7 +78,7 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 
 		defer r.Body.Close()
 
-		var fm *FriendsMaker
+		var fm *model.FriendsMaker
 
 		if err := json.Unmarshal(content, &fm); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -74,7 +86,9 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		userFirst, err := s.storeBD.User().FindById(fm.SourceId)
+		//userFirst := s.GetUser(fm.SourceId) //for map[] store
+
+		userFirst, err := s.userZ.FindById(fm.SourceId)
 		if err != nil {
 			s.logger.Error(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
@@ -82,7 +96,9 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		userSecond, err := s.storeBD.User().FindById(fm.TargetId)
+		//userSecond := s.GetUser(fm.TargetId)                          //for map[] store
+
+		userSecond, err := s.userZ.FindById(fm.TargetId)
 		if err != nil {
 			s.logger.Error(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
@@ -103,7 +119,7 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 
 		//success...
 		userFirst.Friends = append(userFirst.Friends, userSecond.ID)
-		if _, err := s.storeBD.User().SetFriends(userFirst); err != err {
+		if _, err := s.userZ.SetFriends(userFirst); err != err {
 			s.logger.Error(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -111,7 +127,7 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 		}
 
 		userSecond.Friends = append(userSecond.Friends, userFirst.ID)
-		if _, err := s.storeBD.User().SetFriends(userSecond); err != err {
+		if _, err := s.userZ.SetFriends(userSecond); err != err {
 			s.logger.Error(err.Error())
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -129,7 +145,7 @@ func (s *AppServer) MakeFriends(w http.ResponseWriter, r *http.Request) {
 }
 
 //Delete DeleteUser
-func (s *AppServer) Delete(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodDelete && r.Header.Get("Content-Type") == "application/json" {
 		content, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -140,7 +156,7 @@ func (s *AppServer) Delete(w http.ResponseWriter, r *http.Request) {
 
 		defer r.Body.Close()
 
-		var ud *FriendsMaker
+		var ud *model.FriendsMaker
 
 		if err := json.Unmarshal(content, &ud); err != nil {
 			s.logger.Error(err)
@@ -149,7 +165,8 @@ func (s *AppServer) Delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		user, err := s.storeBD.User().FindById(ud.TargetId)
+		//проверка наличия имени
+		user, err := s.userZ.FindById(ud.TargetId)
 		if err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -157,7 +174,14 @@ func (s *AppServer) Delete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := s.storeBD.User().DeleteByID(ud.TargetId); err != nil {
+		//user := s.GetUser(ud.TargetId)
+		//_, ok := s.store[user.Name] //проверка наличия имени
+		//if ok {
+		//	delete(s.store, user.Name) //delete for map[]
+		//	s.DeleteByID(user.ID)
+		//}
+
+		if err := s.userZ.DeleteByID(ud.TargetId); err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(err.Error()))
@@ -172,10 +196,11 @@ func (s *AppServer) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetFriends GetUserFriends
-func (s *AppServer) GetFriends(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) GetFriends(w http.ResponseWriter, r *http.Request) {
 
 	us := &model.User{}
 
+	//конструкция получения выполнения регулярки
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
 
@@ -189,7 +214,9 @@ func (s *AppServer) GetFriends(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		response := ""
 
-		us, err = s.storeBD.User().FindById(int64(id))
+		//user := s.GetUser(int64(id)) //for map[] store...
+
+		us, err = s.userZ.FindById(int64(id))
 		if err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -197,10 +224,26 @@ func (s *AppServer) GetFriends(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		//проверка наличия имени, for map[] store
+		//if user == nil {
+		//	w.WriteHeader(http.StatusInternalServerError)
+		//	w.Write([]byte("Нет пользователя с таким id"))
+		//	return
+		//}
+
+		//	for _, userFriend := range us.Friends {
+		//		response += fmt.Sprintf("%s\n", s.GetUser(userFriend).Name) //get username by id
+		//		}
+		//if response == "" {
+		//	response = fmt.Sprintf("У %s нет друзей :(\n", us.Name)
+		//} else {
+		//	response = fmt.Sprintf("Друзья %s:\n%s", us.Name, response)
+		//}
+
 		response = fmt.Sprintf("Друзья %s:\n", us.Name)
 		if len(us.Friends) > 0 {
 			for _, v := range us.Friends {
-				usFr, _ := s.storeBD.User().FindById(v)
+				usFr, _ := s.userZ.FindById(v)
 				response += fmt.Sprintf("%s\n", usFr.Name)
 			}
 		} else {
@@ -216,10 +259,11 @@ func (s *AppServer) GetFriends(w http.ResponseWriter, r *http.Request) {
 }
 
 // Put UpdateUserAge
-func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) Put(w http.ResponseWriter, r *http.Request) {
 
 	us := &model.User{}
 
+	//конструкция получения выполнения регулярки
 	vars := mux.Vars(r)
 	userId, err := strconv.Atoi(vars["user_id"])
 	if err != nil {
@@ -229,6 +273,7 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//check Content-Type
 	if r.Method == http.MethodPut && r.Header.Get("Content-Type") == "application/json" {
 		content, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -238,7 +283,7 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 		}
 		defer r.Body.Close()
 
-		var na *NewAge
+		var na *model.NewAge
 
 		if err = json.Unmarshal(content, &na); err != nil {
 			s.logger.Error(err)
@@ -247,7 +292,8 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		us, err = s.storeBD.User().FindById(int64(userId))
+		//находим юзера
+		us, err = s.userZ.FindById(int64(userId))
 		if err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -255,7 +301,16 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Info(us, us.Age)
+		//for map[] storage
+		//user := s.GetUser(int64(userId))
+		//проверка наличия имени
+		//if user == nil {
+		//	w.WriteHeader(http.StatusInternalServerError)
+		//	w.Write([]byte("Нет пользователя с таким id"))
+		//	return
+		//}
 
+		//check age...
 		if na.NewAge < 0 {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("Возраст не может быть меньше 0!!!"))
@@ -263,7 +318,7 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 		}
 
 		us.Age = na.NewAge
-		s.storeBD.User().UpdateUser(us)
+		s.userZ.UpdateUser(us)
 		s.logger.Info(fmt.Sprintf("Возраст %s успешно обновлён до %d", us.Name, us.Age))
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -274,14 +329,14 @@ func (s *AppServer) Put(w http.ResponseWriter, r *http.Request) {
 }
 
 //
-//my handlers by debug
+//my handlers by debug (without test)
 //
 
 // GetAll GetAllUsersInformation
-func (s *AppServer) GetAll(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) GetAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		response := ""
-		store, err := s.storeBD.User().GetAll()
+		store, err := s.userZ.GetAll()
 		if err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -300,7 +355,7 @@ func (s *AppServer) GetAll(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUserInfo GetUserInformation
-func (s *AppServer) GetUserInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Handlers) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 
 	us := &model.User{}
 
@@ -316,7 +371,7 @@ func (s *AppServer) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		us, err = s.storeBD.User().FindById(int64(id))
+		us, err = s.userZ.FindById(int64(id))
 		if err != nil {
 			s.logger.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)

@@ -12,24 +12,8 @@ type AppServer struct {
 	config  *Config
 	mux     *mux.Router
 	logger  *logrus.Logger
-	store   map[string]*User //map ссылочный тип
 	storeBD *store.AppStore
-}
-
-type User struct {
-	ID      int64   //Users ID's
-	Name    string  `json:"name"`
-	Age     int64   `json:"age"`
-	Friends []int64 `json:"friends"`
-}
-
-type FriendsMaker struct {
-	SourceId int64 `json:"source_id"`
-	TargetId int64 `json:"target_id"`
-}
-
-type NewAge struct {
-	NewAge int64 `json:"new_age"`
+	handl   Handlers
 }
 
 //init new server
@@ -64,6 +48,9 @@ func (s *AppServer) Start() error {
 		return err
 	}
 
+	//handlers init...
+	s.handl = Handlers{s.logger, s.mux, s.storeBD.User()}
+
 	s.logger.Info(fmt.Sprintf("Starting server (bind on %v)...", s.config.BindAddr)) // set message Info level about succesfull starting server...
 	return http.ListenAndServe(s.config.BindAddr, s.mux)                             //bind addr from config and new gorilla mux
 }
@@ -71,15 +58,15 @@ func (s *AppServer) Start() error {
 //config route...
 func (s *AppServer) configureRouter() {
 
-	s.mux.HandleFunc("/create", s.Create)
-	s.mux.HandleFunc("/make_friends", s.MakeFriends)
-	s.mux.HandleFunc("/user", s.Delete)
-	s.mux.HandleFunc("/friends/{id:[0-9]+}", s.GetFriends) //regexp
-	s.mux.HandleFunc("/{user_id:[0-9]+}", s.Put)           //regexp
+	s.mux.HandleFunc("/create", s.handl.Create)
+	s.mux.HandleFunc("/make_friends", s.handl.MakeFriends)
+	s.mux.HandleFunc("/user", s.handl.Delete)
+	s.mux.HandleFunc("/friends/{id:[0-9]+}", s.handl.GetFriends) //regexp
+	s.mux.HandleFunc("/{user_id:[0-9]+}", s.handl.Put)           //regexp
 
 	//my handler for debug
-	s.mux.HandleFunc("/get_all", s.GetAll)
-	s.mux.HandleFunc("/get/{user_id:[0-9]+}", s.GetUserInfo)
+	s.mux.HandleFunc("/get_all", s.handl.GetAll)
+	s.mux.HandleFunc("/get/{user_id:[0-9]+}", s.handl.GetUserInfo)
 }
 
 func (s *AppServer) configureStore() error {
