@@ -44,41 +44,41 @@ func (p *AppProxy) Balance() (localInstance string) {
 
 // Create CreateUser
 func (p *AppProxy) Create(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			p.logger.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-		}
+	//if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		p.logger.Error(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+	}
 
-		client := &http.Client{}
-		req, err := http.NewRequest(http.MethodPost, p.Balance()+r.RequestURI, bytes.NewBuffer(body))
-		if err != nil {
-			p.logger.Error(err.Error())
-			return
-		}
-		req.Header.Add("Content-Type", "application/json")
-		// Fetch Request
-		resp, err := client.Do(req)
-		if err != nil {
-			p.logger.Error(err.Error())
-			return
-		}
-		defer resp.Body.Close()
-
-		// Read Response Body
-		respBody, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			p.logger.Error(err.Error())
-			return
-		}
-
-		p.logger.Info(string(respBody))
-		w.WriteHeader(resp.StatusCode)
-		w.Write(respBody)
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodPost, p.Balance()+r.RequestURI, bytes.NewBuffer(body))
+	if err != nil {
+		p.logger.Error(err.Error())
 		return
 	}
+	req.Header.Add("Content-Type", "application/json")
+	// Fetch Request
+	resp, err := client.Do(req)
+	if err != nil {
+		p.logger.Error(err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read Response Body
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		p.logger.Error(err.Error())
+		return
+	}
+
+	p.logger.Info(string(respBody))
+	w.WriteHeader(resp.StatusCode)
+	w.Write(respBody)
+	return
+	//	}
 }
 
 // MakeFriends MakeFriends
