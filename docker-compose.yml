@@ -1,4 +1,5 @@
-version: "3.5"
+#version: "3.5"
+version: "2.1"
 services:
   db:
     image: postgres
@@ -41,6 +42,8 @@ services:
       - '127.0.0.1:8081:8080'
     networks:
       - postgres
+    healthcheck:
+      test: curl -f http://localhost:8080/get_all
 
   server2:
     restart: always
@@ -56,12 +59,16 @@ services:
       - '127.0.0.1:8082:8080'
     networks:
       - postgres
+    healthcheck:
+      test: curl -f http://localhost:8080/get_all
 
   proxy:
     restart: always
     depends_on:
-      - server1
-      - server2
+      server1:
+        condition: service_healthy
+      server2:
+        condition: service_healthy
     network_mode: host
     build: './proxy/'
     ports:
